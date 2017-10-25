@@ -1,39 +1,52 @@
-import os
-import flask
+from flask import Flask, session, redirect, url_for, escape, request, render_template
+from hashlib import md5
 import MySQLdb
 
-application = flask.Flask(__name__)
-application.debug = True
+app = Flask(__name__)
 
-@application.route('/')
-def hello_world():
-  storage = Storage()
-  storage.populate()
-  score = storage.score()
-  return "Hello Beijing 123, %d!" % score
+#######################
+#   DATABASE CONFIG   #
+#######################
 
-class Storage():
-  def __init__(self):
-    self.db = MySQLdb.connect(
-      user   = 'root',
-      passwd = 'root',
-      db     = 'app',
-      host   = '3.3.0.6',
-     port   = 3306
-    )
+db = MySQLdb.connect(host="3.3.0.6", user="root", passwd="root", db="test",port=3306)
+cur = db.cursor()
 
-    cur = self.db.cursor()
-    cur.execute("CREATE TABLE IF NOT EXISTS scores(score INT)")
+@app.route('/')
+def index():
+    if 'username' in session:
+        username_session = escape(session['username']).capitalize()
+        return render_template('index.html', session_user_name=username_session)
+    return redirect(url_for('login'))
 
-  def populate(self):
-    cur = self.db.cursor()
-    cur.execute("INSERT INTO scores(score) VALUES(1234)")
 
-  def score(self):
-    cur = self.db.cursor()
-    cur.execute("SELECT * FROM scores")
-    row = cur.fetchone()
-    return row[0]
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = None
+    if 'username' in session:
+        return redirect(url_for('index'))
+    if request.method == 'POST':
+        username_form  = request.form['username']
+        password_form  = request.form['password']
+        cur.execute("SELECT COUNT(1) FROM users WHERE name = %s;", [username_form]) # CHECKS IF USERNAME EXSIST
+        if cur.fetchone()[0]:
+            cur.execute("SELECT pass FROM users WHERE name = %s;", [username_form]) # FETCH THE HASHED PASSWORD
+            for row in cur.fetchall():
+                if md5(password_form).hexdigest() == row[0]:
+                    session['username'] = request.form['username']
+                    return redirect(url_for('index'))
+                else:
+                    error = "Invalid Credential"
+        else:
+            error = "Invalid Credential"
+    return render_template('login.html', error=error)
 
-if __name__ == "__main__":
-  application.run(host='0.0.0.0', port=3000)
+
+@app.route('/logout')
+def logout():
+    session.pop('username', None)
+    return redirect(url_for('index'))
+
+app.secret_key = 'A0Zr98j/3yX R~XHH!jmN]LWX/,?RT'
+
+if __name__ == '__main__':
+    app.run(debug=True)
